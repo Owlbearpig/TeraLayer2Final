@@ -1,18 +1,18 @@
-import matplotlib.pyplot as plt
 import json
 import numpy as np
 import logging
-from consts import data_dir as data_root
+from consts import data_root
 from measurement import Measurement, ModelMeasurement, MeasTypeEnum, SystemEnum
 from functions import window, x_ax_crossing, do_rfft, do_irfft
-from helpers import reduce_sweep_cnt, is_iterable
+from helpers import reduce_sweep_cnt
 from pathlib import Path
 from tqdm import tqdm
 
 
+# search for these dirs in data_root
 sub_dirs = [
     # "Discrete Frequencies - WaveSource",
-    "Discrete Frequencies - WaveSource all sweeps",
+    # "Discrete Frequencies - WaveSource all sweeps",
     # "Discrete Frequencies - WaveSource (PIC-Freuqency Set)",
     # "T-Sweeper",
     # "Discrete Frequencies - PIC all sweeps",
@@ -20,7 +20,7 @@ sub_dirs = [
     # "2024_07_24 - Dry Air - Copy",
     # "2024_07_24 - Dry Air - Copy - 50 sweeps",
     # "2024_07_24 - Dry Air - Frequency corrected",
-    # "2024_07_24 - Dry Air - Frequency Corrected & Background removal",
+    "2024_07_24 - Dry Air - Frequency Corrected & Background removal",
     # "2024_07_24 - Dry Air - Frequency Corrected & Background removal - 5 averaged sweeps",
     # "2024_07_24 - Dry Air - Frequency Corrected & Background removal - 200 sweeps",
     # "2024_07_24 - Dry Air - Copy - 50 averaged sweeps",

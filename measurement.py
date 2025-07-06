@@ -4,9 +4,7 @@ from samples import SamplesEnum
 import json
 import pandas as pd
 from datetime import datetime
-from sklearn.cluster import KMeans
-import matplotlib.pyplot as plt
-from consts import c_thz, thea, base_dir
+from consts import c_thz, thea, data_root
 from tmm_package import coh_tmm_slim_no_checks
 from typing import List
 from pathlib import Path
@@ -347,7 +345,7 @@ class Measurement:
 class ModelMeasurement(Measurement):
     def __init__(self, sample, ref=None):
         if ref is None:
-            ref_meas_path = base_dir / ("T-Sweeper/2024_07_24 - Dry Air - "
+            ref_meas_path = data_root / ("T-Sweeper/2024_07_24 - Dry Air - "
                                         "Frequency Corrected & Background removal/Goldplatte.npz")
         else:
             ref_meas_path = ref.file_path

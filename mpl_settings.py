@@ -1,7 +1,6 @@
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-
-from consts import Path, result_dir
+from consts import Path
 import matplotlib.font_manager
 
 
@@ -50,7 +49,7 @@ def mpl_style_params(new_rcparams=None):
         #r"\usepackage{siunitx}",
         #])
     })
-    rcParams["savefig.directory"] = result_dir
+    # rcParams["savefig.directory"] = ""
 
     if new_rcparams:
         rcParams.update(new_rcparams)

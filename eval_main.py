@@ -1,27 +1,23 @@
-import random
-from pathlib import Path
-from parse_data import *
 import numpy as np
 from tqdm import tqdm
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.widgets import RangeSlider, Button, Slider
 from matplotlib.ticker import MultipleLocator, FuncFormatter
-from helpers import plt_show, read_opt_res_file, format_func, export_config, parse_result_dir
-from mpl_settings import mpl_style_params, result_dir
-from consts import thea, c_thz
-from tmm_package import coh_tmm_slim, list_snell, interface_r, coh_tmm_slim_no_checks
-from functools import partial
-from functions import do_ifft, moving_average, std_err
+from helpers import plt_show, format_func, export_config
+from consts import thea, c_thz, c_proj_path, cur_os, msys2_bash_path
+from tmm_package import list_snell
+from functions import moving_average
 from measurement import ModelMeasurement, Measurement, SamplesEnum, SystemEnum, find_nearest_meas
 import logging
 from copy import deepcopy
 from numpy import polyfit
 import subprocess
 from scipy.special import comb
+import os
 
-# TODO FIX THIS SHIT
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
+logging.basicConfig(level=logging.INFO)
 
 _default_options = {"selected_system": SystemEnum.TSweeper,
                     "selected_sample": SamplesEnum.ampelMannLeft,
@@ -30,50 +26,21 @@ _default_options = {"selected_system": SystemEnum.TSweeper,
                     "less_plots": 1,
                     "debug_info": 0,
                     "freq_selection": [0.307, 0.459, 0.747, 0.82, 0.960, 1.2],
-                    "th_0": 8 * np.pi / 180,
+                    "th_0": thea,
                     "pol": "s",
                     "en_mv_avg": 0,
                     "en_print": 1,
                     "use_r_meas": 0,
                     "use_avg_ref": 0,
-                    "c_proj_path": None,
 
                     # modifies measurement data
                     "ri_shift": None,  # example: ri_shift = [0, 0.1, 0] -> ri = ri + [0, 0.1, 0] (added through get_ri)
                     "meas_f_axis_shift": None,  # in THz. Shifts f_axis in shift_freq_axis method
                     "noise_scaling": None, #
-                    "inc_angle": thea,
                     "calc_f_axis_shift": None, # Shifts the freqs. used in the coe calculation (see shift_f_axis method)
                     }
 
-
-def sel_freqs_at_minima(cnt=6):
-    # phase minima
-    range2 = (152, 159)
-    range3 = (232, 239)
-    range4 = (309, 317)
-    range5 = (386, 397)
-    range6 = (459, 478)
-    range7 = (535, 556)
-    range8 = (607, 643)
-    range9 = (679, 767)
-    range10 = (752, 831)
-    range11 = (823, 909)
-    range12 = (889, 988)
-    range13 = (961, 1247)
-    range14 = (1044, 1247)
-    range15 = (1220, 1247)
-
-    ranges = [range2, range3, range4, range5, range6, range7, range8, range9, range10, range11, range12, range13, range14, range15]
-    ranges = [(r[0]-5, r[0]+5) for r in ranges]
-
-    selected_ranges = random.sample(ranges, cnt)
-    selected_freqs = np.sort(np.array([random.randint(*sel_range) for sel_range in selected_ranges]))
-
-    return selected_freqs * 1e-3 # return in THz
-
 def shift_f_axis(f_axis, f_axis_shift=None):
-    # Absolute shifts in THz
     if f_axis_shift is None:
         return f_axis
 
@@ -91,15 +58,11 @@ def shift_f_axis(f_axis, f_axis_shift=None):
 
 def calculate_coe(meas, options_, sweep_cnt=5000):
     # For 1 and 3 layers (2 layers not implemented)
-
     layer_cnt = options_["selected_sample"].value.layers
-    logging.basicConfig(level=logging.WARNING)
-
-    # np.set_printoptions(precision=5)
 
     coe_cnt, k_cnt = 8, 5
     freq_cnt = len(options_["freq_selection"])
-    print(f"sweep_cnt: {sweep_cnt}, freq_cnt: {freq_cnt}")
+    logging.info(f"Sweep_cnt: {sweep_cnt}, freq_cnt: {freq_cnt}")
 
     freq_selection = options_["freq_selection"]
     freq_shift = options_["calc_f_axis_shift"]
@@ -110,7 +73,10 @@ def calculate_coe(meas, options_, sweep_cnt=5000):
     lam_vac = c_thz / f_axis_calc
 
     n_list = options_["selected_sample"].value.get_ref_idx(f_axis_calc)
-    r_options = {"freqs": f_axis_calc, "th_0": options_["th_0"], "pol": options_["pol"]}
+
+    # Inc angle + pol is fixed. (could be changed)
+    r_options = {"freqs": shift_f_axis(freq_selection, freq_shift),
+                 "th_0": _default_options["th_0"], "pol": _default_options["pol"]}
     r_fn = options_["selected_sample"].value.get_r(r_options)
     def coe_1d():
         # coe_ needs tmm update (see 3D case)
@@ -141,11 +107,12 @@ def calculate_coe(meas, options_, sweep_cnt=5000):
                 th_list[m] = list_snell(n_list[m], thea).T
                 k_[sweep_idx, :, m] = 2 * np.pi * n_list[m] * np.cos(th_list[m]) / lam_vac[f_idx]
 
-                # for testing
+                """ # for validation
                 r_mod[m] = -coh_tmm_slim("s",
                                          n_list[m],
                                          [np.inf, 73, 660, 43, np.inf],
                                          thea, lam_vac[f_idx])
+                """
 
             f_idx_sel = [np.argmin(np.abs(f - f_axis_meas)) for f in freq_selection]
             if options_["selected_sweep"] is None:
@@ -154,8 +121,6 @@ def calculate_coe(meas, options_, sweep_cnt=5000):
                 r_exp_ = meas.r[sweep_idx, f_idx_sel]
 
             # r_exp_ = r_mod
-            # r_exp_mod[-1] = r_mod[-1]
-            # r_exp_mod[2] = r_mod[2]
 
             r = -np.abs(r_exp_) * np.exp(1j * np.angle(r_exp_))
 
@@ -171,24 +136,22 @@ def calculate_coe(meas, options_, sweep_cnt=5000):
             coe_[0][sweep_idx] = [c0, c1, c2, c3, c4, c5, c6, c7]
             coe_[1][sweep_idx] = [r, r_fn[:, 0, 1], r_fn[:, 1, 2], r_fn[:, 2, 3], r_fn[:, 3, 4],
                                   c5, c6, c7] # last 3 are unused
-            """
-            if sweep_idx == options_["selected_sweep"]:
-                print(sweep_idx, coe_[1][sweep_idx][0].real, coe_[1][sweep_idx][0].imag)
-                for i in range(4):
-                    print(f"r{i}:", coe_[1][sweep_idx][i+1])
-            """
+
         f_idx_sel = [np.argmin(np.abs(f - f_axis_meas)) for f in freq_selection]
 
         # sweeps = np.arange(sam_meas.r.shape[0])
         # sweeps = sweeps[sweeps != 4273] # sweep 4273 is broken...
-        real_weights = 1/np.std(meas.r.real[:4250, f_idx_sel], axis=0)
-        imag_weights = 1/np.std(meas.r.imag[:4250, f_idx_sel], axis=0)
+        # real_weights = 1/np.std(meas.r.real[:4250, f_idx_sel], axis=0)
+        # imag_weights = 1/np.std(meas.r.imag[:4250, f_idx_sel], axis=0)
+        real_weights = 1 / np.std(meas.r.real[:, f_idx_sel], axis=0)
+        imag_weights = 1 / np.std(meas.r.imag[:, f_idx_sel], axis=0)
 
         # w_ = np.ones(len(f_idx_sel), dtype=complex) # real_weights + 1j * imag_weights
         w_ = real_weights + 1j * imag_weights
 
         return coe_, k_, w_
 
+    logging.info("Calculating coefficients...")
     if layer_cnt == 1:
         coe, k, w = coe_1d()
     elif layer_cnt == 3:
@@ -196,14 +159,13 @@ def calculate_coe(meas, options_, sweep_cnt=5000):
     else:
         raise NotImplemented
 
-    c_proj_path = options_["c_proj_path"]
-
-    coe.tofile(str(c_proj_path / "c.bin"))
-    k.tofile(str(c_proj_path / "k.bin"))
-    w.tofile(str(c_proj_path / "w.bin"))
+    coe.tofile(str(c_proj_path / "coe" / "c.bin"))
+    k.tofile(str(c_proj_path / "coe" / "k.bin"))
+    w.tofile(str(c_proj_path / "coe" / "w.bin"))
 
 
 def simulated_measurements(options_):
+    # new impl. not yet tested
     sam_cnt = 1
     d_truth = np.zeros((sam_cnt, 3))
     n_truth = np.zeros((sam_cnt, 3, 2), dtype=complex)
@@ -234,13 +196,12 @@ def simulated_measurements(options_):
     mod_meas0 = ModelMeasurement(options_["selected_sample"], refs[0])
 
     mod_meas_list = []
-    with open(str(options_["c_proj_path"] / "truths.txt"), "w") as file:
+    with open(str(c_proj_path / "truths.txt"), "w") as file:
         file.write("# sam idx, d_truth, n_truth\n")
         for k in range(sam_cnt):
-            print("simulating sample", k, d_truth[k], [n_truth[k][m] for m in range(len(d_truth[k]))], "\n")
+            logging.info("simulating sample", k, d_truth[k], [n_truth[k][m] for m in range(len(d_truth[k]))], "\n")
             file.write(f"{k}, {d_truth[k]} ")
             file.write(f"{[list(n_truth[k, i_]) for i_ in range(n_truth.shape[1])]}\n")
-            options_["of_test"] = d_truth[k]
 
             new_mod_meas = deepcopy(mod_meas0)
             new_mod_sam = SamplesEnum.ampelMannLeft
@@ -250,7 +211,7 @@ def simulated_measurements(options_):
             new_mod_sam.value.set_ref_idx(new_ref_idx)
             np.set_printoptions(precision=3)
             set_ref_idx = new_mod_sam.value.get_ref_idx(jl_eval.options["freq_selection"])
-            print("Refractive indices at f_sel:\n", set_ref_idx)
+            logging.info("Refractive indices at f_sel:\n", set_ref_idx)
             new_mod_meas.sample = new_mod_sam
             new_mod_meas.simulate_sam_measurement(selected_freqs=options_["freq_selection"])
             jl_eval.add_noise(new_mod_meas)
@@ -272,15 +233,12 @@ class JumpingLaserEval:
         self.plot_vars = {"truth_line_exists": False, "colors": ['red', 'green', 'blue', 'orange', 'purple']}
 
     def load_measurements_and_set_options(self, options_=None):
-        # set default values if key not in options_
         if options_ is None:
             options_ = {}
-        if "of_test" in options_:
-            options_["en_save"] = 0
 
         for k in _default_options:
             if k not in options_:
-                print(f"Using default value: ({k}, {_default_options[k]})")
+                logging.info(f"Using default value: ({k}, {_default_options[k]})")
                 options_[k] = _default_options[k]
         options_["freq_selection"] = np.array(options_["freq_selection"])
 
@@ -297,9 +255,10 @@ class JumpingLaserEval:
 
         sel_sweep = options_["selected_sweep"]
         if sel_sweep is not None and (sel_sweep > n_sweeps_):
-            raise Exception(f"Selected sweep ({sel_sweep}) too high. Dataset contains {n_sweeps_} sweeps")
+            raise Exception(f"Selected sweep ({sel_sweep} > total sweeps {n_sweeps_})")
 
         if options_["debug_info"]:
+            # not really used
             logging.basicConfig(level=logging.DEBUG)
         else:
             logging.basicConfig(level=logging.INFO)
@@ -334,7 +293,7 @@ class JumpingLaserEval:
 
     def fix_r_phi_sign(self, meas: Measurement):
         if meas.n_sweeps == 1:
-            print(f"Skipping {meas}, #sweeps: {meas.n_sweeps}")
+            logging.info(f"Skipping {meas}, #sweeps: {meas.n_sweeps} (phase sign fix)")
             return
 
         meas_tsweeper = None
@@ -344,7 +303,7 @@ class JumpingLaserEval:
                 break
 
         if not meas_tsweeper:
-            print(f"No TSweeper measurement for {meas}")
+            logging.info(f"No TSweeper measurement for {meas} (phase sign fix)")
             return
 
         for freq_idx, freq in enumerate(meas.freq):
@@ -386,24 +345,24 @@ class JumpingLaserEval:
             shift = 0
 
         if self.options["meas_f_axis_shift"] is None:
-            manual_shift = 0.000
+            variable_shift = 0.000
         else:
-            manual_shift = self.options["meas_f_axis_shift"]
+            variable_shift = self.options["meas_f_axis_shift"]
 
-        sam_meas_.freq += shift + manual_shift
-        ref_meas_.freq += shift + manual_shift
+        sam_meas_.freq += shift + variable_shift
+        ref_meas_.freq += shift + variable_shift
 
     def fix_phase_slope(self, sam_meas_: Measurement):
-        # fixes offset at higher frequencies (> 0.8 THz)
+        # fixes ref <-> sam distance difference
         if sam_meas_.system == SystemEnum.TSweeper:
             pulse_shifts = {SamplesEnum.blueCube: 2.6, SamplesEnum.fpSample2: 0.24, SamplesEnum.fpSample3: 0.28,
                             SamplesEnum.fpSample5ceramic: 0.28, SamplesEnum.fpSample5Plastic: 0.39,
                             SamplesEnum.fpSample6: 0.1, SamplesEnum.bwCeramicWhiteUp: 0.20,
                             SamplesEnum.bwCeramicBlackUp: 0.26,
                             SamplesEnum.ampelMannRight: -0.02,
-                            SamplesEnum.ampelMannLeft: 0.0, # 0.20 default
+                            SamplesEnum.ampelMannLeft: 0.0, # 0.20
                             SamplesEnum.opBlackPos1: 0.1,
-                            SamplesEnum.opRedPos1: 0.2,  # not done
+                            SamplesEnum.opRedPos1: 0.2,
                             SamplesEnum.opBluePos1: 0.43}
             if sam_meas_.file_path.suffix != ".csv":
                 pulse_shifts[SamplesEnum.ampelMannLeft] = 0.049 # 0.104 default
@@ -413,14 +372,13 @@ class JumpingLaserEval:
                             SamplesEnum.fpSample5ceramic: -0.16,
                             SamplesEnum.fpSample6: 0.2, SamplesEnum.bwCeramicBlackUp: 0.01,
                             SamplesEnum.bwCeramicWhiteUp: -0.069,
-                            # SamplesEnum.ampelMannRight: -0.080,  # best
                             SamplesEnum.ampelMannRight: -0.080,  # -0.080
-                            SamplesEnum.ampelMannLeft: 0.825,  # 0.825 default # 0.60 ? 0.550 ?? 0.850
+                            SamplesEnum.ampelMannLeft: 0.825,  # 0.825 default # 0.850
                             SamplesEnum.opBlackPos1: -0.7,
                             SamplesEnum.opBluePos1: -0.95}
         elif sam_meas_.system == SystemEnum.WaveSource:
             pulse_shifts = {SamplesEnum.ampelMannLeft: 0.45, # 0.49 default
-                            SamplesEnum.ampelMannRight: 0.52, # not optimized
+                            SamplesEnum.ampelMannRight: 0.52,
                             }
         elif sam_meas_.system == SystemEnum.ECOPS:
             if "even" in str(sam_meas_.file_path):
@@ -472,6 +430,7 @@ class JumpingLaserEval:
 
     def fix_phase_offset(self, sam_meas_):
         # We can only do this for the (broadband) TSweeper measurements
+        # This version does not modify the data (only plots for testing)
         if self.options["selected_system"] != SystemEnum.TSweeper:
             return
 
@@ -485,7 +444,6 @@ class JumpingLaserEval:
 
         phi_avg_uw = np.unwrap(phi_avg, discont=0.8, period=np.pi)  # discont=np.pi*0.8
         coe_avg = polyfit(freq, phi_avg_uw, deg=1)
-        print(coe_avg[0], coe_avg[1])
 
         phi_diffs = np.diff(phi_avg, append=0)
         no_jump_mask = np.abs(phi_diffs) < 0.1
@@ -528,6 +486,12 @@ class JumpingLaserEval:
     def calc_sample_refl_coe(self):
         selected_sample = self.options["selected_sample"]
         sample_meas = [meas for meas in self.measurements["all"] if meas.sample == selected_sample]
+
+        for sam_meas in sample_meas:
+            # fix_r_phi_sign(sam_meas)
+            pass
+
+        returned_meas = []
         for sam_meas in sample_meas:
             is_r_meas = "R_" in str(sam_meas.file_path.name)[:3]
 
@@ -548,9 +512,9 @@ class JumpingLaserEval:
             amp_sam, phi_sam = sam_meas.amp, sam_meas.phase
             amp_sam_avg, phi_sam_avg = sam_meas.amp_avg, sam_meas.phase_avg
 
-            phase_sign_ = -1 # np.sign(ref_meas.freq)
+            phase_sign_ = -1
             if sam_meas.system in [SystemEnum.PIC, SystemEnum.WaveSource]:
-                phase_sign_ = 1 # np.sign(ref_meas.freq)
+                phase_sign_ = 1
 
             phi_diff, phi_diff_avg = phi_sam - phi_ref, phi_sam_avg - phi_ref_avg
             # phi_diff, phi_diff_avg = np.unwrap(phi_diff), np.unwrap(phi_diff_avg)
@@ -561,7 +525,6 @@ class JumpingLaserEval:
             if sam_meas.system == SystemEnum.TSweeper:
                 phi_diff_avg = moving_average(phi_diff_avg, window_size=2)
                 amp_ratio_avg = moving_average(amp_ratio_avg, window_size=2)
-
 
             sam_meas.r = amp_ratio * np.exp(phase_sign_ * 1j * phi_diff)
             sam_meas.r_avg = amp_ratio_avg * np.exp(phase_sign_ * 1j * phi_diff_avg)
@@ -576,16 +539,20 @@ class JumpingLaserEval:
                         sam_meas.r[sweep_idx].imag = moving_average(sam_meas.r[sweep_idx].imag, window_size=3)
 
             self.fix_tsweeper_offset(sam_meas)
-            self.fix_phase_offset(sam_meas)
+            # self.fix_phase_offset(sam_meas)
 
             if sam_meas.n_sweeps != 1:
                 sam_meas.r_std = np.std(sam_meas.r.real, axis=0) + 1j * np.std(sam_meas.r.imag, axis=0)
 
-        for sam_meas in sample_meas:
-            # fix_r_phi_sign(sam_meas)
-            pass
+            if self.options["use_r_meas"]:
+                if is_r_meas:
+                    returned_meas.append(sam_meas)
+                else:
+                    continue
+            else:
+                returned_meas.append(sam_meas)
 
-        return sample_meas
+        return returned_meas
 
     def plot_model_refl_coe(self, thicknesses):
         # thicknesses = [sweep_idx, layer_idx]
@@ -623,14 +590,6 @@ class JumpingLaserEval:
         ax1_r.tick_params(axis='both', which='major', labelsize=font_size)
         ax1_r.tick_params(axis='both', which='minor', labelsize=font_size)
 
-        """
-        d1_, d2_, d3_ = new_thicknesses
-        s = f"Optimization result ({d1_}, {d2_}, {d3_}) $\mu$m"
-        s = f"Optimization result"
-        ax0_r.annotate(s, xy=(0.232, -36), xytext=(0.35, -35),  # -45 below fig.
-                       arrowprops=dict(facecolor=mod_color, shrink=0.12, ec=mod_color),
-                       size=font_size-4, c=mod_color, va='center')
-        """
         if not en_legend:
             ax0_r.annotate(r"\bf{Full CW-spectrum}", xy=(0.78, -9), xytext=(-0.05, 10),
                            arrowprops=dict(facecolor=ts_color, shrink=0.12, ec=ts_color),
@@ -686,6 +645,9 @@ class JumpingLaserEval:
         else:
             sample_meas = [meas]
             title += f" ({meas.system.name})"
+
+        if self.options["use_r_meas"]:
+            sample_meas = [meas for meas in sample_meas if "R_" in str(meas.file_path.name)[:3]]
 
         sweep_s = f"sweep {selected_sweep_}"
 
@@ -1080,32 +1042,6 @@ class JumpingLaserEval:
         ax_2.scatter(freqs[f_idx_sel], max_phase[f_idx_sel],
                      label=f"Max. phase (@sel freq)", c="black", s=30, zorder=2)
 
-    def integrated_std_err_plot(self, std_err_=None):
-        selected_sample_ = self.options["selected_sample"]
-        dt = 0.960  # ms
-        n_sweeps_ = 2000
-        layer_cnt = selected_sample_.value.layers
-        std_err_dict = {SamplesEnum.ampelMannLeft: [0.02, 0.02, 0.06],
-                        SamplesEnum.ampelMannRight: [0.12, 0.10, 0.07]}
-        if std_err_ is None:
-            try:
-                std_err_ = np.array(std_err_dict[selected_sample_], dtype=float)
-            except KeyError:
-                std_err_ = np.zeros(layer_cnt)
-
-        sigma = std_err_ * np.sqrt(n_sweeps_)
-        n = np.arange(1, 20 + 1, 1)
-
-        plt.figure(f"Integrated_standard_error_{selected_sample_.name}")
-        plt.title("Standarderror as a function of measurement time")
-        plt.xlabel("Measurement time (ms)")
-        plt.ylabel(r"Standarderror ($\mu$m)")
-
-        for layer_idx in range(layer_cnt):
-            std_err_ = sigma[layer_idx] / np.sqrt(n)
-            label = fr"Layer {layer_idx + 1} ($\sigma =${np.round(sigma[layer_idx], 2)} $\mu$m)"
-            plt.plot(n * dt, std_err_, label=label, lw=3.0, markersize=5)
-
 
 def change_freq_selection(options_, rnd_sel_size=8):
     freq_sel = np.array(options_["freq_selection"], dtype=float)
@@ -1130,9 +1066,6 @@ def change_freq_selection(options_, rnd_sel_size=8):
     # options_["freq_selection"] = np.sort([*freq_sel, *random.sample(list(all_freqs), 114)])
     # options_["freq_selection"] = np.sort([*np.random.choice(all_freqs, 6, replace=False)])
 
-    rnd_sel = [*np.random.choice(freq_sel, rnd_sel_size, replace=False)]
-    changed_selection = np.sort(rnd_sel)
-
     if len(changed_selection) < 10:
         f_sel = changed_selection
         logging.warning(f"Used frequencies: {f_sel} THz")
@@ -1143,7 +1076,7 @@ def change_freq_selection(options_, rnd_sel_size=8):
     return ret_options
 
 def compile_and_run(options_, run_id_str=None):
-    make_dir = options_["c_proj_path"]
+    make_dir = str(c_proj_path)
 
     fsel_list = list(options_["freq_selection"])
     freq_cnt = len(fsel_list)
@@ -1151,44 +1084,49 @@ def compile_and_run(options_, run_id_str=None):
     if run_id_str is None:
         run_id_str = "_".join(f"{f_}" for f_ in fsel_list)
 
-    print(f"Running make with ID={run_id_str}, FCNT={freq_cnt}")
-    args = ["make", f"ID={run_id_str}", f"FCNT={freq_cnt}", "simple"]
-    result = subprocess.run(args,
-                            cwd=make_dir,
-                            capture_output=True,
-                            text=True,
-                            )
+    logging.info(f"compiling with ID={run_id_str}, FCNT={freq_cnt}")
+    if "posix" in cur_os:
+        popenargs = ["make", f"ID={run_id_str}", f"FCNT={freq_cnt}", "simple"]
+    else:
+        make_cmd = f"cd '{make_dir}' && make ID={run_id_str} FCNT={freq_cnt} simple"
+        popenargs = [str(msys2_bash_path), "-lc", make_cmd]
+
+        env = os.environ.copy()
+        env["MSYSTEM"] = "MINGW64"
+
+    result = subprocess.run(
+        popenargs,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
 
     if result.returncode == 0:
-        print(f"✅ Success")
+        logging.info(f"✅ Success")
     else:
-        print(f"❌ Error")
-        print(result.stderr)
+        logging.error(f"❌ Error")
+        logging.error(result.stderr)
 
 
 def setup_meas(options_):
-
     if options_["sim_meas"]:
         meas_ = simulated_measurements(options_)
     else:
         jl = JumpingLaserEval(options_)
         jl.options["en_print"] = 1
+
         sam_meas_list = jl.calc_sample_refl_coe()
-        if options_["use_r_meas"] and len(sam_meas_list) > 1:
-            meas_ = sam_meas_list[1]
-        else:
-            meas_ = sam_meas_list[0]
-        print(f"Using measurement {meas_}")
+        meas_ = sam_meas_list[0]
+        logging.info(f"Using measurement {meas_}")
 
     return meas_
 
 def eval_impl(options_):
-
     if options_["sim_meas"]:
         measurements = setup_meas(options_)
-        for meas in measurements:
+        for i, meas in enumerate(measurements):
             calculate_coe(meas, options_)
-            compile_and_run(options_)
+            compile_and_run(options_, run_id_str=f"sam_{i}")
     else:
         meas = setup_meas(options_)
         calculate_coe(meas, options_)
@@ -1196,18 +1134,33 @@ def eval_impl(options_):
 
 
 def freq_var(options_):
-    max_run_cnt = 100
+    max_run_cnt = 10000
     all_freqs = np.array(options_["freq_selection"], dtype=float)
 
+    def get_completed_f_sel():
+        compl_res_paths = [path for path in (c_proj_path / "results").rglob('*') if path.is_file()]
+
+        completed_f_sel = []
+        for path in compl_res_paths:
+            if not "result_" in path.stem:
+                continue
+            freq_list = path.stem.split("_")[1:]
+            freq_list = np.array([float(f) for f in freq_list], dtype=float)
+            completed_f_sel.append(freq_list)
+
+        return completed_f_sel
+
     def gen_unique_f_sel(size=8):
+        completed_sel = get_completed_f_sel()
         sel_ret = []
+
         max_selection_cnt = comb(len(all_freqs), size, exact=True)
 
-        while len(sel_ret) < min(max_run_cnt, max_selection_cnt):
+        logging.info(f"Generating freq. selections")
+        while len(sel_ret) < min(max_run_cnt - len(completed_sel), max_selection_cnt):
             rnd_sel = np.random.choice(all_freqs, size, replace=False)
-            rnd_sel_sorted = np.sort(rnd_sel)
-
-            if not any(np.array_equal(rnd_sel_sorted, arr) for arr in sel_ret):
+            rnd_sel_sorted = np.round(np.sort(rnd_sel), 3)
+            if not any(np.array_equal(rnd_sel_sorted, arr) for arr in [*sel_ret, *completed_sel]):
                 sel_ret.append(rnd_sel_sorted)
 
         return sel_ret
@@ -1218,29 +1171,25 @@ def freq_var(options_):
         selections = gen_unique_f_sel(sel_size)
         for freq_sel in selections:
             new_options["freq_selection"] = freq_sel
-            if options_["sim_meas"]:
-                simulated_measurements(new_options)
-            else:
-                calculate_coe(new_options, sweep_cnt=5000)
-
+            meas = setup_meas(options_)
+            calculate_coe(meas, new_options)
             compile_and_run(new_options)
 
 if __name__ == '__main__':
-
-    options = {"selected_system": SystemEnum.WaveSource,
+    options = {"selected_system": SystemEnum.TSweeper,
                "selected_sample": SamplesEnum.ampelMannLeft,
                "en_save": 0,
                "selected_sweep": 10,  # selected_sweep: int, None(=average) or "random"
                "less_plots": 1,
                "debug_info": 0,
-               "c_proj_path": Path(""), # TODO set correct path
 
-               "use_r_meas": 0,  # r_dataset exists only for TSweeper
+               "use_r_meas": 1,  # r_dataset exists only for TSweeper
                "use_avg_ref": 1,
-               "mean_start_idx": 0,
-               "freq_selection": [0.05, 0.15, 0.20, 0.60, 0.75, 0.80, 1.00, 1.5],  # Wavesource, links
-               "calc_f_axis_shift": 0.0,
+               "freq_selection": [0.307, 0.459, 0.747, 0.82, 0.960, 1.2], # TSWeeper used in publication 1
+               "freq_selection": [0.05, 0.15, 0.21, 0.60, 0.75, 0.80, 1.0, 1.5], # Wavesource freq set, links
+               # "freq_selection": [0.05, 0.15, 0.20, 0.60, 0.75, 0.80, 1.00, 1.5],  # Wavesource freq set, links
+               "calc_f_axis_shift": {"rel_shift": 0.0},
                "sim_meas": False,
                }
-
+    options["freq_selection"] = np.arange(0.08, 1.5, 0.001)
     freq_var(options)

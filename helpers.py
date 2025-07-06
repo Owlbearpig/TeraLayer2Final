@@ -1,9 +1,4 @@
-import logging
-import warnings
-from typing import Callable, Iterable
-
 import pandas as pd
-from scipy.optimize import root_scalar
 import numpy as np
 from pathlib import Path
 from enum import Enum
@@ -11,10 +6,6 @@ import json
 
 
 def is_iterable(obj):
-    """
-    print(is_iterable(3.4))
-    print(is_iterable([3.4]))
-    """
     try:
         iter(obj)
     except TypeError:
