@@ -13,11 +13,11 @@ Omega_, Delta_, sigma_, mu_, epsilon_, degree_ = '\u03BC', '\u0394', '\u03C3', '
 if 'posix' in cur_os:
     data_root = r"/home/ftpuser/ftp/Data/TeraLayer2"
     c_proj_path = r"/home/alex/PycharmProjects/TeraLayer2/C_implementation/nelder-mead"
+    msys2_bash_path = None # Only for windows
 else:
     data_root = r"C:\Users\alexj\Data\TeraLayer2"
     c_proj_path = r"C:\Users\alexj\Projects\TL2_engine"
-
-msys2_bash_path = Path(r"C:\msys64\usr\bin\bash.exe")
+    msys2_bash_path = Path(r"C:\msys64\usr\bin\bash.exe")
 
 data_root = Path(data_root)
 c_proj_path = Path(c_proj_path)

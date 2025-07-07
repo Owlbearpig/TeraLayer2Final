@@ -8,6 +8,7 @@ from helpers import plt_show, format_func, export_config
 from consts import thea, c_thz, c_proj_path, cur_os, msys2_bash_path
 from tmm_package import list_snell
 from functions import moving_average
+from parse_data import parse_measurements
 from measurement import ModelMeasurement, Measurement, SamplesEnum, SystemEnum, find_nearest_meas
 import logging
 from copy import deepcopy
@@ -1085,20 +1086,22 @@ def compile_and_run(options_, run_id_str=None):
         run_id_str = "_".join(f"{f_}" for f_ in fsel_list)
 
     logging.info(f"compiling with ID={run_id_str}, FCNT={freq_cnt}")
+
+    run_kwargs = {"capture_output": True, "text": True}
     if "posix" in cur_os:
         popenargs = ["make", f"ID={run_id_str}", f"FCNT={freq_cnt}", "simple"]
+        run_kwargs["cwd"] = make_dir
     else:
         make_cmd = f"cd '{make_dir}' && make ID={run_id_str} FCNT={freq_cnt} simple"
         popenargs = [str(msys2_bash_path), "-lc", make_cmd]
 
         env = os.environ.copy()
         env["MSYSTEM"] = "MINGW64"
+        run_kwargs["env"] = env
 
     result = subprocess.run(
         popenargs,
-        capture_output=True,
-        text=True,
-        env=env,
+        **run_kwargs
     )
 
     if result.returncode == 0:
@@ -1134,7 +1137,7 @@ def eval_impl(options_):
 
 
 def freq_var(options_):
-    max_run_cnt = 10000
+    max_run_cnt = 100
     all_freqs = np.array(options_["freq_selection"], dtype=float)
 
     def get_completed_f_sel():
