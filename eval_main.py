@@ -99,6 +99,7 @@ def calculate_coe(meas, options_, sweep_cnt=5000):
     def coe_3d():
         r_mod = np.zeros(freq_cnt, dtype=complex)
         # First idx: [re-arranged tmm, tmm]
+        f_idx_sel = [np.argmin(np.abs(f - f_axis_meas)) for f in freq_selection]
         coe_ = np.zeros((2, sweep_cnt, coe_cnt, freq_cnt), dtype=complex)
         k_ = np.zeros((sweep_cnt, k_cnt, freq_cnt), dtype=complex)
         for sweep_idx in tqdm(range(sweep_cnt)):
@@ -115,7 +116,6 @@ def calculate_coe(meas, options_, sweep_cnt=5000):
                                          thea, lam_vac[f_idx])
                 """
 
-            f_idx_sel = [np.argmin(np.abs(f - f_axis_meas)) for f in freq_selection]
             if options_["selected_sweep"] is None:
                 r_exp_ = meas.r_avg[f_idx_sel]
             else:
@@ -137,8 +137,6 @@ def calculate_coe(meas, options_, sweep_cnt=5000):
             coe_[0][sweep_idx] = [c0, c1, c2, c3, c4, c5, c6, c7]
             coe_[1][sweep_idx] = [r, r_fn[:, 0, 1], r_fn[:, 1, 2], r_fn[:, 2, 3], r_fn[:, 3, 4],
                                   c5, c6, c7] # last 3 are unused
-
-        f_idx_sel = [np.argmin(np.abs(f - f_axis_meas)) for f in freq_selection]
 
         # sweeps = np.arange(sam_meas.r.shape[0])
         # sweeps = sweeps[sweeps != 4273] # sweep 4273 is broken...
@@ -1078,37 +1076,51 @@ def change_freq_selection(options_, rnd_sel_size=8):
 
 def compile_and_run(options_, run_id_str=None):
     make_dir = str(c_proj_path)
+    en_verb = int(options_["verbose_opt"])
 
-    fsel_list = list(options_["freq_selection"])
+    fsel_list = options_["freq_selection"]
     freq_cnt = len(fsel_list)
 
     if run_id_str is None:
-        run_id_str = "_".join(f"{f_}" for f_ in fsel_list)
+        if freq_cnt > 10:
+            run_id_str = f"fcnt_{freq_cnt}"
+        else:
+            run_id_str = "_".join(f"{f_}" for f_ in np.round(fsel_list, 3))
 
-    logging.info(f"compiling with ID={run_id_str}, FCNT={freq_cnt}")
+    logging.info(f"compiling and executing with ID={run_id_str}, FCNT={freq_cnt}, VERBOSE={en_verb}")
 
-    run_kwargs = {"capture_output": True, "text": True}
     if "posix" in cur_os:
-        popenargs = ["make", f"ID={run_id_str}", f"FCNT={freq_cnt}", "simple"]
-        run_kwargs["cwd"] = make_dir
+        popenargs = ["make", f"ID={run_id_str}", f"FCNT={freq_cnt}", f"VERBOSE={en_verb}", "simple"]
+        process_kwargs = {
+            "cwd": make_dir,
+            "text": True,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+        }
     else:
-        make_cmd = f"cd '{make_dir}' && make ID={run_id_str} FCNT={freq_cnt} simple"
+        make_cmd = f"cd '{make_dir}' && make ID={run_id_str} FCNT={freq_cnt} VERBOSE={en_verb} simple"
         popenargs = [str(msys2_bash_path), "-lc", make_cmd]
 
         env = os.environ.copy()
         env["MSYSTEM"] = "MINGW64"
-        run_kwargs["env"] = env
+        process_kwargs = {
+            "text": True,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "env": env
+        }
 
-    result = subprocess.run(
-        popenargs,
-        **run_kwargs
-    )
+    with subprocess.Popen(popenargs, **process_kwargs) as proc:
+        for line in proc.stdout:
+            if en_verb:
+                logging.info(line.rstrip())
 
-    if result.returncode == 0:
-        logging.info(f"✅ Success")
+        returncode = proc.wait()
+
+    if returncode == 0:
+        logging.info("✅ Success")
     else:
-        logging.error(f"❌ Error")
-        logging.error(result.stderr)
+        logging.error("❌ Error")
 
 
 def setup_meas(options_):
@@ -1137,7 +1149,8 @@ def eval_impl(options_):
 
 
 def freq_var(options_):
-    max_run_cnt = 100
+    max_run_cnt = 10000
+    max_sel_size = 8
     all_freqs = np.array(options_["freq_selection"], dtype=float)
 
     def get_completed_f_sel():
@@ -1169,7 +1182,7 @@ def freq_var(options_):
         return sel_ret
 
     new_options = deepcopy(options_)
-    for sel_size in range(8, 9):
+    for sel_size in range(max_sel_size, max_sel_size+1):
         np.random.seed(sel_size)
         selections = gen_unique_f_sel(sel_size)
         for freq_sel in selections:
@@ -1185,14 +1198,26 @@ if __name__ == '__main__':
                "selected_sweep": 10,  # selected_sweep: int, None(=average) or "random"
                "less_plots": 1,
                "debug_info": 0,
+               "verbose_opt": 0,
 
                "use_r_meas": 1,  # r_dataset exists only for TSweeper
                "use_avg_ref": 1,
                "freq_selection": [0.307, 0.459, 0.747, 0.82, 0.960, 1.2], # TSWeeper used in publication 1
-               "freq_selection": [0.05, 0.15, 0.21, 0.60, 0.75, 0.80, 1.0, 1.5], # Wavesource freq set, links
+               "freq_selection": [0.05, 0.15, 0.20, 0.60, 0.75, 0.80, 1.0, 1.5], # Wavesource freq set, links
                # "freq_selection": [0.05, 0.15, 0.20, 0.60, 0.75, 0.80, 1.00, 1.5],  # Wavesource freq set, links
                "calc_f_axis_shift": {"rel_shift": 0.0},
                "sim_meas": False,
                }
     options["freq_selection"] = np.arange(0.08, 1.5, 0.001)
+    # options["freq_selection"] = np.arange(0.08, 1.00, 0.001)
+    """
+    x = np.linspace(0, 1, 1420)
+    scaled = x**(1/2)
+
+    a, b = 0.08, 1.50
+    arr = a + (b - a) * scaled
+
+    options["freq_selection"] = arr
+    """
     freq_var(options)
+    # eval_impl(options)
