@@ -57,12 +57,16 @@ def shift_f_axis(f_axis, f_axis_shift=None):
     return f_axis
 
 
-def calculate_coe(meas, options_, sweep_cnt=5000):
+def calculate_coe(meas, options_, sweep_cnt=None):
     # For 1 and 3 layers (2 layers not implemented)
     layer_cnt = options_["selected_sample"].value.layers
 
     coe_cnt, k_cnt = 8, 5
     freq_cnt = len(options_["freq_selection"])
+    if sweep_cnt is None:
+        sweep_cnt = meas.n_sweeps
+    options_["sweep_cnt"] = sweep_cnt
+
     logging.info(f"Sweep_cnt: {sweep_cnt}, freq_cnt: {freq_cnt}")
 
     freq_selection = options_["freq_selection"]
@@ -335,6 +339,8 @@ class JumpingLaserEval:
                           SamplesEnum.ampelMannRight: 0.022, }
         elif sam_meas_.system == SystemEnum.WaveSource:
             shifts = {SamplesEnum.ampelMannLeft: 0.000} # tried 0.005, default 0.0
+        elif sam_meas_.system == SystemEnum.WaveSourcePicFreq:
+            shifts = {SamplesEnum.ampelMannLeft: 0.000}
         else:
             shifts = {}
 
@@ -379,6 +385,8 @@ class JumpingLaserEval:
             pulse_shifts = {SamplesEnum.ampelMannLeft: 0.45, # 0.49 default
                             SamplesEnum.ampelMannRight: 0.52,
                             }
+        elif sam_meas_.system == SystemEnum.WaveSourcePicFreq:
+            pulse_shifts = {SamplesEnum.ampelMannLeft: 0.70}
         elif sam_meas_.system == SystemEnum.ECOPS:
             if "even" in str(sam_meas_.file_path):
                 pulse_shifts = {SamplesEnum.ampelMannLeft: 0.11, # even sweeps dataset
@@ -512,7 +520,7 @@ class JumpingLaserEval:
             amp_sam_avg, phi_sam_avg = sam_meas.amp_avg, sam_meas.phase_avg
 
             phase_sign_ = -1
-            if sam_meas.system in [SystemEnum.PIC, SystemEnum.WaveSource]:
+            if sam_meas.system in [SystemEnum.PIC, SystemEnum.WaveSource, SystemEnum.WaveSourcePicFreq]:
                 phase_sign_ = 1
 
             phi_diff, phi_diff_avg = phi_sam - phi_ref, phi_sam_avg - phi_ref_avg
@@ -661,6 +669,10 @@ class JumpingLaserEval:
         ax0_r.set_ylim((-40, 15))
 
         for sam_meas in sample_meas:
+            logging.info(f"Plotting {sam_meas.file_path}")
+            if sam_meas.r is None:
+                self.calc_sample_refl_coe()
+
             freq = sam_meas.freq
 
             if sam_meas.n_sweeps == 1:
@@ -670,8 +682,9 @@ class JumpingLaserEval:
 
             r_db, r_phi = 20 * np.log10(np.abs(r)), np.angle(r)
 
-            ax0_r.plot(freq, r_db, label="Full spectrum", c="grey", zorder=8)
-            ax1_r.plot(freq, r_phi, label="Full spectrum", c="grey", zorder=8)
+            if sam_meas.system == SystemEnum.TSweeper:
+                ax0_r.plot(freq, r_db, label="Full spectrum", c="grey", zorder=8)
+                ax1_r.plot(freq, r_phi, label="Full spectrum", c="grey", zorder=8)
 
             f_idx_selection = [np.argmin(np.abs(f - freq)) for f in self.options["freq_selection"]]
 
@@ -679,8 +692,13 @@ class JumpingLaserEval:
             r_db = r_db[f_idx_selection]
             r_phi = r_phi[f_idx_selection]
 
-            ax0_r.scatter(freq, r_db, label="Selected frequencies", s=40, zorder=9, c="blue")
-            ax1_r.scatter(freq, r_phi, label="Selected frequencies", s=40, zorder=9, c="blue")
+            if sam_meas.system == SystemEnum.TSweeper:
+                c = "red"
+            else:
+                c = "blue"
+
+            ax0_r.scatter(freq, r_db, label=f"Selected frequencies {sam_meas.system.name}", s=40, zorder=9, c=c)
+            ax1_r.scatter(freq, r_phi, label=f"Selected frequencies {sam_meas.system.name}", s=40, zorder=9, c=c)
 
 
     def plot_sample_refl_coe(self):
@@ -1080,6 +1098,7 @@ def compile_and_run(options_, run_id_str=None):
 
     fsel_list = options_["freq_selection"]
     freq_cnt = len(fsel_list)
+    sweep_cnt = options_["sweep_cnt"]
 
     if run_id_str is None:
         if freq_cnt > 10:
@@ -1087,10 +1106,15 @@ def compile_and_run(options_, run_id_str=None):
         else:
             run_id_str = "_".join(f"{f_}" for f_ in np.round(fsel_list, 3))
 
-    logging.info(f"compiling and executing with ID={run_id_str}, FCNT={freq_cnt}, VERBOSE={en_verb}")
+    build_params = [f"ID={run_id_str}",
+                    f"SCNT={sweep_cnt}",
+                    f"FCNT={freq_cnt}",
+                    f"VERBOSE={en_verb}"]
+
+    logging.info(f"compiling and executing with {build_params}")
 
     if "posix" in cur_os:
-        popenargs = ["make", f"ID={run_id_str}", f"FCNT={freq_cnt}", f"VERBOSE={en_verb}", "simple"]
+        popenargs = ["make", *build_params, "simple"]
         process_kwargs = {
             "cwd": make_dir,
             "text": True,
@@ -1098,7 +1122,8 @@ def compile_and_run(options_, run_id_str=None):
             "stderr": subprocess.STDOUT,
         }
     else:
-        make_cmd = f"cd '{make_dir}' && make ID={run_id_str} FCNT={freq_cnt} VERBOSE={en_verb} simple"
+        bp_str = " ".join(build_params)
+        make_cmd = f"cd '{make_dir}' && make {bp_str} simple"
         popenargs = [str(msys2_bash_path), "-lc", make_cmd]
 
         env = os.environ.copy()
@@ -1131,8 +1156,13 @@ def setup_meas(options_):
         jl.options["en_print"] = 1
 
         sam_meas_list = jl.calc_sample_refl_coe()
-        meas_ = sam_meas_list[0]
-        logging.info(f"Using measurement {meas_}")
+        meas_ = None
+        for sam_meas in sam_meas_list:
+            if ((sam_meas.system == options_["selected_system"]) and
+                    (sam_meas.sample == options_["selected_sample"])):
+                meas_ = sam_meas
+                break
+        logging.info(f"############\n\nUsing measurement {meas_}")
 
     return meas_
 
@@ -1192,7 +1222,7 @@ def freq_var(options_):
             compile_and_run(new_options)
 
 if __name__ == '__main__':
-    options = {"selected_system": SystemEnum.TSweeper,
+    options = {"selected_system": SystemEnum.WaveSourcePicFreq,
                "selected_sample": SamplesEnum.ampelMannLeft,
                "en_save": 0,
                "selected_sweep": 10,  # selected_sweep: int, None(=average) or "random"
@@ -1200,24 +1230,21 @@ if __name__ == '__main__':
                "debug_info": 0,
                "verbose_opt": 0,
 
-               "use_r_meas": 1,  # r_dataset exists only for TSweeper
+               "use_r_meas": 1,  # r_datasets do not exist for all datasets / systems
                "use_avg_ref": 1,
-               "freq_selection": [0.307, 0.459, 0.747, 0.82, 0.960, 1.2], # TSWeeper used in publication 1
-               "freq_selection": [0.05, 0.15, 0.20, 0.60, 0.75, 0.80, 1.0, 1.5], # Wavesource freq set, links
-               # "freq_selection": [0.05, 0.15, 0.20, 0.60, 0.75, 0.80, 1.00, 1.5],  # Wavesource freq set, links
+               # "freq_selection": [0.307, 0.459, 0.747, 0.82, 0.960, 1.2], # TSWeeper used in publication 1
+               # "freq_selection": [0.05, 0.15, 0.20, 0.60, 0.75, 0.80, 1.0, 1.5], # Wavesource freq set, links
+               "freq_selection": [-0.043, 0.120, 0.301, 0.357, 0.741, 0.756, 0.818, 1.000],  # Wavesource at PIC-freqs
                "calc_f_axis_shift": {"rel_shift": 0.0},
                "sim_meas": False,
                }
-    options["freq_selection"] = np.arange(0.08, 1.5, 0.001)
+    #jl_eval = JumpingLaserEval(options)
+    #jl_eval.plot_sample_refl_coe_simple()
+
+    # options["freq_selection"] = np.arange(0.08, 1.5, 0.001)
     # options["freq_selection"] = np.arange(0.08, 1.00, 0.001)
-    """
-    x = np.linspace(0, 1, 1420)
-    scaled = x**(1/2)
 
-    a, b = 0.08, 1.50
-    arr = a + (b - a) * scaled
+    # freq_var(options)
+    eval_impl(options)
 
-    options["freq_selection"] = arr
-    """
-    freq_var(options)
-    # eval_impl(options)
+    # plt_show(mpl)

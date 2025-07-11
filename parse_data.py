@@ -14,13 +14,14 @@ sub_dirs = [
     # "Discrete Frequencies - WaveSource",
     # "Discrete Frequencies - WaveSource all sweeps",
     # "Discrete Frequencies - WaveSource (PIC-Freuqency Set)",
+    "Discrete Frequencies - WaveSource (PIC-Frequency Set) all sweeps",
     # "T-Sweeper",
     # "Discrete Frequencies - PIC all sweeps",
     # "Discrete Frequencies - PIC",
     # "2024_07_24 - Dry Air - Copy",
     # "2024_07_24 - Dry Air - Copy - 50 sweeps",
     # "2024_07_24 - Dry Air - Frequency corrected",
-    "2024_07_24 - Dry Air - Frequency Corrected & Background removal",
+    # "2024_07_24 - Dry Air - Frequency Corrected & Background removal",
     # "2024_07_24 - Dry Air - Frequency Corrected & Background removal - 5 averaged sweeps",
     # "2024_07_24 - Dry Air - Frequency Corrected & Background removal - 200 sweeps",
     # "2024_07_24 - Dry Air - Copy - 50 averaged sweeps",
@@ -33,7 +34,6 @@ sub_dirs = [
     # "ECOPS - fd - 100 sweeps - odd",
     # "ECOPS - fd - 2500 sweeps - even",
     # "ECOPS - fd - 2500 sweeps - odd"
-
     # "ECOPS - fd - full - 5000 sweeps - even"
     # "ECOPS - fd - full - 100 sweeps - even",
     # "ECOPS - td - full",

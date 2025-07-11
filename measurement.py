@@ -68,7 +68,10 @@ class Measurement:
         self._parse_file(file_path)
 
     def __repr__(self):
-        return f"(file: {self.file_path.stem}, system: {self.system.name}, sweep cnt: {self.n_sweeps})"
+        atr_strs = [f"file: {self.file_path.stem}", f"system: {self.system.name}",
+                 f"sweep cnt: {self.n_sweeps}", f"freq cnt: {len(self.freq)}"]
+        s = "(" + ", ".join(atr_strs) + ")"
+        return s
 
     def time_diff(self, meas):
         if isinstance(self.timestamp, datetime):
@@ -97,9 +100,9 @@ class Measurement:
         if "Discrete Frequencies - PIC" in str(self.file_path):
             self.system = SystemEnum.PIC
         elif ("Discrete Frequencies - WaveSource" in str(self.file_path) and
-              ("(PIC-Freuqency Set)" not in str(self.file_path))):
+              ("PIC" not in str(self.file_path))):
             self.system = SystemEnum.WaveSource
-        elif "Discrete Frequencies - WaveSource (PIC-Freuqency Set)" in str(self.file_path):
+        elif "WaveSource" in str(self.file_path) and "PIC" in str(self.file_path):
             self.system = SystemEnum.WaveSourcePicFreq
         elif "ECOPS" in str(self.file_path):
             self.system = SystemEnum.ECOPS
