@@ -349,9 +349,8 @@ class Measurement:
 class ModelMeasurement(Measurement):
     def __init__(self, sample, ref=None):
         if ref is None:
-            ref_meas_path = data_root / ("T-Sweeper/2024_07_24 - Dry Air - "
-                                        "Frequency Corrected & Background removal/Goldplatte.npz")
-
+            file = Path(r"2024_07_24 - Dry Air - Frequency Corrected & Background removal") / "Goldplatte.npz"
+            ref_meas_path = data_root / "T-Sweeper" / file
         else:
             ref_meas_path = ref.file_path
 

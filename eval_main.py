@@ -627,7 +627,7 @@ class JumpingLaserEval:
             if meas.r is None:
                 self.calc_sample_refl_coe()
 
-            print(meas)
+            logging.info(str(meas))
 
             limits = (min_freq < meas.freq) * (meas.freq < max_freq)
             freq = meas.freq[limits]
@@ -648,7 +648,7 @@ class JumpingLaserEval:
                 ax1_r.scatter(freq[f_idx], r_phi[f_idx],
                               label=en_legend*"Selected frequencies", s=100, zorder=3, c=pic_color)
 
-        mod_meas = ModelMeasurement(selected_sample)
+        mod_meas = ModelMeasurement(selected_sample, ref=self.measurements["refs"][0])
         limits = (min_freq < mod_meas.freq) * (mod_meas.freq < max_freq)
         freq = mod_meas.freq[limits]
         legend_label = en_legend * fr"Optimization result\\({thicknesses}) µm"
