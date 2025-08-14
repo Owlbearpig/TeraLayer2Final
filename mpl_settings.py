@@ -36,7 +36,7 @@ def mpl_style_params(new_rcparams=None):
     # Then, "ALWAYS use sans-serif fonts"
     # rcParams['font.family'] = "sans-serif"
     rcParams.update({
-        "text.usetex": True,  # Use LaTeX to write all text
+        "text.usetex": False,  # Use LaTeX to write all text
         # "pgf.texsystem": "pdflatex",
         # Is my latex installation broken???
         #"font.family": "serif", # "serif",  # Use serif fonts

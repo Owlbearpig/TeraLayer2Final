@@ -68,7 +68,8 @@ class Measurement:
         self._parse_file(file_path)
 
     def __repr__(self):
-        atr_strs = [f"file: {self.file_path.stem}", f"system: {self.system.name}",
+        fp = self.file_path
+        atr_strs = [f"file: {fp.name}", f"system: {self.system.name}",
                  f"sweep cnt: {self.n_sweeps}", f"freq cnt: {len(self.freq)}"]
         s = "(" + ", ".join(atr_strs) + ")"
         return s
@@ -350,6 +351,7 @@ class ModelMeasurement(Measurement):
         if ref is None:
             ref_meas_path = data_root / ("T-Sweeper/2024_07_24 - Dry Air - "
                                         "Frequency Corrected & Background removal/Goldplatte.npz")
+
         else:
             ref_meas_path = ref.file_path
 

@@ -29,7 +29,7 @@ _default_options = {"selected_system": SystemEnum.TSweeper,
                     "freq_selection": [0.307, 0.459, 0.747, 0.82, 0.960, 1.2],
                     "th_0": thea,
                     "pol": "s",
-                    "en_mv_avg": 0,
+                    "en_mv_avg": 1,
                     "en_print": 1,
                     "use_r_meas": 0,
                     "use_avg_ref": 0,
@@ -335,7 +335,7 @@ class JumpingLaserEval:
                       SamplesEnum.fpSample5Plastic: -0.006,
                       SamplesEnum.fpSample6: 0.0}
             if sam_meas_.file_path.suffix != ".csv":
-                shifts = {SamplesEnum.ampelMannLeft: 0.000, # 0.025 used with old dataset
+                shifts = {SamplesEnum.ampelMannLeft: 0.021, # 0.025 used with old dataset # 0.000 with R_ dataset
                           SamplesEnum.ampelMannRight: 0.022, }
         elif sam_meas_.system == SystemEnum.WaveSource:
             shifts = {SamplesEnum.ampelMannLeft: 0.000} # tried 0.005, default 0.0
@@ -358,7 +358,8 @@ class JumpingLaserEval:
         ref_meas_.freq += shift + variable_shift
 
     def fix_phase_slope(self, sam_meas_: Measurement):
-        # fixes ref <-> sam distance difference
+        # adjusts ref <-> sam distance difference
+        is_r_meas = "R_" in str(sam_meas_.file_path.name)[:3]
         if sam_meas_.system == SystemEnum.TSweeper:
             pulse_shifts = {SamplesEnum.blueCube: 2.6, SamplesEnum.fpSample2: 0.24, SamplesEnum.fpSample3: 0.28,
                             SamplesEnum.fpSample5ceramic: 0.28, SamplesEnum.fpSample5Plastic: 0.39,
@@ -370,7 +371,7 @@ class JumpingLaserEval:
                             SamplesEnum.opRedPos1: 0.2,
                             SamplesEnum.opBluePos1: 0.43}
             if sam_meas_.file_path.suffix != ".csv":
-                pulse_shifts[SamplesEnum.ampelMannLeft] = 0.049 # 0.104 default
+                pulse_shifts[SamplesEnum.ampelMannLeft] = 0.049 if is_r_meas else 0.104 # 0.104 default # 0.049
                 pulse_shifts[SamplesEnum.ampelMannRight] = 0.26
         elif sam_meas_.system == SystemEnum.PIC:
             pulse_shifts = {SamplesEnum.fpSample2: 0.09, SamplesEnum.fpSample3: 0.09,
@@ -410,6 +411,8 @@ class JumpingLaserEval:
         sam_meas_.phase_avg += phase_correction
 
     def fix_tsweeper_offset(self, sam_meas_: Measurement):
+        is_r_meas = "R_" in str(sam_meas_.file_path.name)[:3]
+
         amp_avg, phi_avg = np.abs(sam_meas_.r_avg), np.angle(sam_meas_.r_avg)
         amp, phi = np.abs(sam_meas_.r), np.angle(sam_meas_.r)
 
@@ -422,7 +425,7 @@ class JumpingLaserEval:
                        SamplesEnum.fpSample6: -1.1,
                        SamplesEnum.bwCeramicWhiteUp: 0.20,
                        SamplesEnum.ampelMannRight: 0.29,
-                       SamplesEnum.ampelMannLeft: 0.50, # 0.0 default
+                       SamplesEnum.ampelMannLeft: 0.050 if is_r_meas else 0.00 # , # 0.0 default
                        }
         else:
             return
@@ -503,7 +506,8 @@ class JumpingLaserEval:
             is_r_meas = "R_" in str(sam_meas.file_path.name)[:3]
 
             ref_meas = find_nearest_meas(sam_meas, self.measurements["refs"])
-            self.shift_meas_freq_axis(sam_meas, ref_meas)
+            if not is_r_meas:
+                self.shift_meas_freq_axis(sam_meas, ref_meas)
             self.fix_phase_slope(sam_meas)
 
             if is_r_meas:
@@ -568,7 +572,11 @@ class JumpingLaserEval:
         selected_sweep_ = self.options["selected_sweep"]
         selected_sample = self.options["selected_sample"]
 
-        selected_sample.value.set_thicknesses(thicknesses[selected_sweep_])
+        thicknesses = np.array(thicknesses)
+        if thicknesses.ndim == 2:
+            thicknesses = thicknesses[selected_sweep_]
+
+        selected_sample.value.set_thicknesses(thicknesses)
 
         font_size = 26
         en_legend = False
@@ -598,19 +606,29 @@ class JumpingLaserEval:
         ax1_r.tick_params(axis='both', which='minor', labelsize=font_size)
 
         if not en_legend:
-            ax0_r.annotate(r"\bf{Full CW-spectrum}", xy=(0.78, -9), xytext=(-0.05, 10),
+            ax0_r.annotate(r"Full CW-spectrum", xy=(0.78, -9), xytext=(-0.05, 10),
                            arrowprops=dict(facecolor=ts_color, shrink=0.12, ec=ts_color),
                            size=font_size - 4, c=ts_color, va='top')
-            ax0_r.annotate(r"\bf{Selected}\\\bf{frequencies}", xy=(1.20, -5.0), xytext=(0.9, 5.5),
+            ax0_r.annotate(r"Selected frequencies", xy=(1.20, -5.0), xytext=(0.9, 5.5),
                            arrowprops=dict(facecolor=pic_color, shrink=0.12, ec=pic_color),
                            size=font_size - 4, c=pic_color, ha="center")
-            ax0_r.annotate(r"\bf{Fit to selected}\\\bf{frequencies}", xy=(0.9, -24.1), xytext=(1.00, -32.0),
+            ax0_r.annotate(r"Fit to selected frequencies", xy=(0.9, -24.1), xytext=(1.00, -32.0),
                            arrowprops=dict(facecolor=mod_color, shrink=0.12, ec=mod_color),
                            size=font_size - 4, c=mod_color, ha="left")
 
         for meas in self.measurements["all"]:
             if meas.sample != selected_sample:
                 continue
+
+            is_r_meas = "R_" in str(meas.file_path.name)[:3]
+            if self.options["use_r_meas"] ^ is_r_meas:
+                continue
+
+            if meas.r is None:
+                self.calc_sample_refl_coe()
+
+            print(meas)
+
             limits = (min_freq < meas.freq) * (meas.freq < max_freq)
             freq = meas.freq[limits]
 
@@ -633,7 +651,7 @@ class JumpingLaserEval:
         mod_meas = ModelMeasurement(selected_sample)
         limits = (min_freq < mod_meas.freq) * (mod_meas.freq < max_freq)
         freq = mod_meas.freq[limits]
-        legend_label = en_legend * fr"Optimization result\\({thicknesses[selected_sweep_]}) µm"
+        legend_label = en_legend * fr"Optimization result\\({thicknesses}) µm"
         r_mod = mod_meas.r_avg[limits]
         ax0_r.plot(freq, 20*np.log10(np.abs(r_mod)), label=legend_label, c=mod_color, lw=4, zorder=2)
         ax1_r.plot(freq, np.angle(r_mod), label=legend_label, c=mod_color, lw=4, zorder=2)
@@ -1222,29 +1240,30 @@ def freq_var(options_):
             compile_and_run(new_options)
 
 if __name__ == '__main__':
-    options = {"selected_system": SystemEnum.WaveSourcePicFreq,
+    options = {"selected_system": SystemEnum.TSweeper,
                "selected_sample": SamplesEnum.ampelMannLeft,
                "en_save": 0,
-               "selected_sweep": 10,  # selected_sweep: int, None(=average) or "random"
+               "selected_sweep": 389,  # selected_sweep: int, None(=average) or "random"
                "less_plots": 1,
                "debug_info": 0,
                "verbose_opt": 0,
 
-               "use_r_meas": 1,  # r_datasets do not exist for all datasets / systems
+               "use_r_meas": 0,  # r_datasets do not exist for all datasets / systems
                "use_avg_ref": 1,
-               # "freq_selection": [0.307, 0.459, 0.747, 0.82, 0.960, 1.2], # TSWeeper used in publication 1
+               "freq_selection": [0.307, 0.459, 0.747, 0.82, 0.960, 1.2], # TSWeeper used in publication 1
                # "freq_selection": [0.05, 0.15, 0.20, 0.60, 0.75, 0.80, 1.0, 1.5], # Wavesource freq set, links
-               "freq_selection": [-0.043, 0.120, 0.301, 0.357, 0.741, 0.756, 0.818, 1.000],  # Wavesource at PIC-freqs
+               # "freq_selection": [-0.043, 0.120, 0.301, 0.357, 0.741, 0.756, 0.818, 1.000],  # Wavesource at PIC-freqs
                "calc_f_axis_shift": {"rel_shift": 0.0},
                "sim_meas": False,
                }
-    #jl_eval = JumpingLaserEval(options)
-    #jl_eval.plot_sample_refl_coe_simple()
+    jl_eval = JumpingLaserEval(options)
+    # jl_eval.plot_sample_refl_coe_simple()
+    jl_eval.plot_model_refl_coe([76, 660, 37])
 
     # options["freq_selection"] = np.arange(0.08, 1.5, 0.001)
     # options["freq_selection"] = np.arange(0.08, 1.00, 0.001)
 
     # freq_var(options)
-    eval_impl(options)
+    # eval_impl(options)
 
-    # plt_show(mpl)
+    plt_show(mpl)

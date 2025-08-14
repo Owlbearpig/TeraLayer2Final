@@ -14,7 +14,7 @@ sub_dirs = [
     # "Discrete Frequencies - WaveSource",
     # "Discrete Frequencies - WaveSource all sweeps",
     # "Discrete Frequencies - WaveSource (PIC-Freuqency Set)",
-    "Discrete Frequencies - WaveSource (PIC-Frequency Set) all sweeps",
+    # "Discrete Frequencies - WaveSource (PIC-Frequency Set) all sweeps",
     # "T-Sweeper",
     # "Discrete Frequencies - PIC all sweeps",
     # "Discrete Frequencies - PIC",
@@ -27,7 +27,7 @@ sub_dirs = [
     # "2024_07_24 - Dry Air - Copy - 50 averaged sweeps",
     # "2024_07_24 - Dry Air - Copy - 5 averaged sweeps",
     # "2024_07_24 - Dry Air - Copy - 10 averaged sweeps",
-    # "2024_07_24 - Dry Air - Copy - 5 averaged sweeps",
+    "2024_07_24 - Dry Air - Copy - 5 averaged sweeps",
     # "ECOPS - td", # original dataset, must be transformed first
     # "ECOPS - fd - 200 sweeps",
     # "ECOPS - fd - 100 sweeps - even",
